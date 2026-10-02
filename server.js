@@ -3,6 +3,8 @@ import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { timingSafeEqual } from 'node:crypto';
+import mysql from 'mysql2/promise';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.join(ROOT, 'dist');
@@ -10,15 +12,45 @@ const DATA_DIR = path.join(ROOT, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'store.json');
 const RPC = 'https://api.devnet.solana.com';
 const MEMO_PROGRAM = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
-const PORT = Number(process.env.PORT || 8001);
+const PRODUCTION = process.env.NODE_ENV === 'production';
+const PORT = Number(process.env.PORT || (PRODUCTION ? 3000 : 8001));
+const HOST = process.env.HOST || (PRODUCTION ? '0.0.0.0' : '127.0.0.1');
+const ACCESS_CODE = process.env.APP_ACCESS_CODE || '';
+const DB_VARS = ['DB_HOST', 'DB_NAME', 'DB_USERNAME', 'DB_PASSWORD'];
+const hasDatabase = DB_VARS.every(name => process.env[name]) && process.env.DB_PORT;
+if (PRODUCTION && ACCESS_CODE.length < 32) throw new Error('Set APP_ACCESS_CODE to a random value of at least 32 characters before production startup.');
+if (PRODUCTION && !hasDatabase) throw new Error('Production startup requires the Wasmer managed database (DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD).');
+const pool = hasDatabase ? mysql.createPool({
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT),
+  database: process.env.DB_NAME,
+  user: process.env.DB_USERNAME,
+  password: process.env.DB_PASSWORD,
+  waitForConnections: true,
+  connectionLimit: 5,
+  queueLimit: 20,
+  charset: 'utf8mb4',
+  ...(process.env.DB_SSL === 'true' ? { ssl: { rejectUnauthorized: true } } : {}),
+}) : null;
 const MAX_BODY = 2_000_000;
 let state = { org: null, assets: [], events: [] };
 let saveQueue = Promise.resolve();
 
-await mkdir(DATA_DIR, { recursive: true });
-if (existsSync(DATA_FILE)) {
-  try { state = { ...state, ...JSON.parse(await readFile(DATA_FILE, 'utf8')) }; }
-  catch (e) { console.error('Could not read data/store.json:', e.message); }
+if (pool) {
+  await pool.execute(`CREATE TABLE IF NOT EXISTS temirtrace_state (
+    state_id TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+    payload LONGTEXT NOT NULL,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`);
+  const [rows] = await pool.execute('SELECT payload FROM temirtrace_state WHERE state_id = 1');
+  if (rows.length) state = { ...state, ...JSON.parse(rows[0].payload) };
+  else await pool.execute('INSERT INTO temirtrace_state (state_id, payload) VALUES (1, ?)', [JSON.stringify(state)]);
+} else {
+  await mkdir(DATA_DIR, { recursive: true });
+  if (existsSync(DATA_FILE)) {
+    try { state = { ...state, ...JSON.parse(await readFile(DATA_FILE, 'utf8')) }; }
+    catch (e) { console.error('Could not read data/store.json:', e.message); }
+  }
 }
 
 function json(res, status, value) {
@@ -26,14 +58,29 @@ function json(res, status, value) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(body), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
   res.end(body);
 }
-async function persist() {
+async function persist(connection = null) {
   const snapshot = JSON.stringify(state, null, 2);
+  if (pool) {
+    await (connection || pool).execute('INSERT INTO temirtrace_state (state_id, payload) VALUES (1, ?) ON DUPLICATE KEY UPDATE payload = VALUES(payload)', [snapshot]);
+    return;
+  }
   saveQueue = saveQueue.then(async () => {
     const tmp = `${DATA_FILE}.tmp`;
     await writeFile(tmp, snapshot, 'utf8');
     await rename(tmp, DATA_FILE);
   });
   await saveQueue;
+}
+async function refreshState(connection) {
+  if (!pool) return;
+  const [rows] = await connection.execute('SELECT payload FROM temirtrace_state WHERE state_id = 1');
+  state = rows.length ? { ...state, ...JSON.parse(rows[0].payload) } : { org: null, assets: [], events: [] };
+}
+function validAccessCode(candidate) {
+  if (!ACCESS_CODE) return !PRODUCTION;
+  const provided = Buffer.from(String(candidate || ''));
+  const expected = Buffer.from(ACCESS_CODE);
+  return provided.length === expected.length && timingSafeEqual(provided, expected);
 }
 async function bodyJson(req) {
   let body = '';
@@ -69,7 +116,7 @@ function memoTexts(instructions = []) {
   }
   return found;
 }
-async function verifyRecord(record, signature) {
+async function verifyRecord(record, signature, connection) {
   if (!record || !/^[1-9A-HJ-NP-Za-km-z]{70,100}$/.test(signature || '')) throw Object.assign(new Error('Record or Solana signature is invalid'), { status: 400 });
   const rpcRes = await fetch(RPC, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 'temirtrace', method: 'getTransaction', params: [signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0, encoding: 'jsonParsed' }] }), signal: AbortSignal.timeout(12_000) });
   if (!rpcRes.ok) throw Object.assign(new Error(`Solana Devnet RPC returned HTTP ${rpcRes.status}`), { status: 502 });
@@ -78,23 +125,23 @@ async function verifyRecord(record, signature) {
   const tx = payload.result;
   if (!tx) {
     record.chainStatus = 'pending'; record.signature = signature;
-    await persist();
+    await persist(connection);
     return { status: 'pending', signature, message: 'Transaction is not visible at confirmed commitment yet.' };
   }
   if (tx.meta?.err) {
     record.chainStatus = 'failed'; record.signature = signature;
-    await persist();
+    await persist(connection);
     throw Object.assign(new Error('The Devnet transaction failed on-chain'), { status: 422 });
   }
   const instructions = tx.transaction?.message?.instructions || [];
   const found = memoTexts(instructions).includes(`TEMIRTRACE|v1|${record.id}|${record.hash}`);
   if (!found) {
     record.chainStatus = 'mismatch'; record.signature = signature;
-    await persist();
+    await persist(connection);
     throw Object.assign(new Error('Confirmed transaction does not contain the expected TemirTrace memo'), { status: 422 });
   }
   record.signature = signature; record.chainStatus = 'confirmed'; record.chainBlockTime = tx.blockTime || null; record.chainSlot = tx.slot; record.chainVerifiedAt = new Date().toISOString();
-  await persist();
+  await persist(connection);
   return { status: 'confirmed', signature, slot: tx.slot, blockTime: tx.blockTime || null, explorerUrl: `https://explorer.solana.com/tx/${signature}?cluster=devnet` };
 }
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
@@ -110,9 +157,30 @@ async function serveStatic(req, res, pathname) {
 }
 
 const server = createServer(async (req, res) => {
-  const url = new URL(req.url || '/', `http://127.0.0.1:${PORT}`);
+  const url = new URL(req.url || '/', `http://${req.headers.host || `localhost:${PORT}`}`);
+  let dbConnection = null;
+  let dbLock = false;
   try {
-    if (url.pathname === '/api/health' && req.method === 'GET') return json(res, 200, { status: 'ok', app: 'TemirTrace', backend: 'local-json', cluster: 'devnet', timestamp: new Date().toISOString() });
+    if (url.pathname === '/api/access' && req.method === 'POST') {
+      const input = await bodyJson(req);
+      return validAccessCode(input.accessCode)
+        ? json(res, 200, { authorized: true })
+        : json(res, 401, { error: 'That access code is not correct.' });
+    }
+    const privateRoute = ['/api/state', '/api/review-queue', '/api/review-queue/decision'].includes(url.pathname) || /^\/api\/verify\/[A-Za-z0-9-]+$/.test(url.pathname);
+    if (privateRoute && !validAccessCode(req.headers.authorization?.replace(/^Bearer\s+/i, ''))) {
+      return json(res, 401, { error: 'Enter the private demo access code to continue.' });
+    }
+    if (pool && url.pathname.startsWith('/api/')) {
+      dbConnection = await pool.getConnection();
+      if (['PUT', 'POST', 'PATCH', 'DELETE'].includes(req.method)) {
+        const [lockRows] = await dbConnection.query('SELECT GET_LOCK(?, 10) AS acquired', ['temirtrace_state_v1']);
+        if (lockRows[0]?.acquired !== 1) throw Object.assign(new Error('The shared workspace is busy. Try again.'), { status: 503 });
+        dbLock = true;
+      }
+      await refreshState(dbConnection);
+    }
+    if (url.pathname === '/api/health' && req.method === 'GET') return json(res, 200, { status: 'ok', app: 'TemirTrace', backend: pool ? 'mysql' : 'local-json', accessProtected: Boolean(ACCESS_CODE), cluster: 'devnet', timestamp: new Date().toISOString() });
     if (url.pathname === '/api/state' && req.method === 'GET') return json(res, 200, state);
     if (url.pathname === '/api/review-queue' && req.method === 'GET') {
       const org = state.org?.verification?.status === 'pending' ? state.org : null;
@@ -132,7 +200,7 @@ const server = createServer(async (req, res) => {
         ? { status: 'demo_verified', mode: 'manual_demo_review', reviewedAt }
         : { status: 'needs_changes', mode: 'manual_demo_review', reviewedAt, note },
         reviewHistory: [entry, ...history] };
-      await persist();
+      await persist(dbConnection);
       return json(res, 200, { org: state.org });
     }
     if (url.pathname === '/api/state' && req.method === 'PUT') {
@@ -140,13 +208,13 @@ const server = createServer(async (req, res) => {
       if (!next || typeof next !== 'object' || !Array.isArray(next.assets) || !Array.isArray(next.events)) return json(res, 400, { error: 'State must contain assets and events arrays' });
       if (JSON.stringify(next).length > MAX_BODY) return json(res, 413, { error: 'Saved workspace is too large' });
       state = { org: next.org || null, assets: next.assets, events: next.events };
-      await persist(); return json(res, 200, { saved: true, counts: { assets: state.assets.length, events: state.events.length } });
+      await persist(dbConnection); return json(res, 200, { saved: true, counts: { assets: state.assets.length, events: state.events.length } });
     }
     const verifyMatch = url.pathname.match(/^\/api\/verify\/([A-Za-z0-9-]+)$/);
     if (verifyMatch && req.method === 'POST') {
       const record = state.events.find(x => x.id === verifyMatch[1]);
       const input = await bodyJson(req);
-      const result = await verifyRecord(record, input.signature);
+      const result = await verifyRecord(record, input.signature, dbConnection);
       return json(res, 200, result);
     }
     const publicMatch = url.pathname.match(/^\/api\/public\/passport\/([A-Za-z0-9-]+)$/);
@@ -164,7 +232,15 @@ const server = createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/')) return json(res, 404, { error: 'API route not found' });
     if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Method not allowed' });
     return await serveStatic(req, res, url.pathname);
-  } catch (e) { return json(res, e.status || 500, { error: e.message || 'Internal server error' }); }
+  } catch (e) {
+    console.error('Request failed:', e.message);
+    return json(res, e.status || 500, { error: e.status && e.status < 500 ? e.message : 'The server could not complete this request.' });
+  } finally {
+    if (dbConnection) {
+      if (dbLock) { try { await dbConnection.query('SELECT RELEASE_LOCK(?)', ['temirtrace_state_v1']); } catch { /* connection will be returned below */ } }
+      dbConnection.release();
+    }
+  }
 });
 
-server.listen(PORT, '127.0.0.1', () => console.log(`TemirTrace demo ready at http://127.0.0.1:${PORT} (Solana Devnet)`));
+server.listen(PORT, HOST, () => console.log(`TemirTrace ready on ${HOST}:${PORT} (Solana Devnet; storage: ${pool ? 'mysql' : 'local-json'})`));

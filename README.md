@@ -1,49 +1,51 @@
-# TemirTrace — equipment passport demo
+# TemirTrace
 
-English-language local full-stack demo for equipment passports, service history, organization review, and verifiable Solana Devnet memos.
+TemirTrace is an early equipment-passport demo for organizations, equipment owners, and service workshops. It stores organization and service-history records in a backend database and can publish a record ID plus SHA-256 fingerprint to Solana Devnet using the Memo program.
 
-## Run tomorrow's demo
+## Run locally
 
 Requirements: Node.js 20+ and npm.
 
-1. Open a terminal in this folder.
-2. Run `npm install` once.
-3. Run `npm run demo` (builds the frontend and starts the backend).
-4. Open `http://127.0.0.1:8001` in Chrome. Keep the terminal open.
-5. For the blockchain step, install Phantom only from [phantom.com/download](https://phantom.com/download), open this same local URL in that browser, and connect the wallet that owns your Devnet SOL. Check that Phantom says **Devnet** before approving a transaction.
-
-No wallet? Click **Load sample demo** to show the application flow. The sample workspace is fictional and does not create an on-chain transaction. It will replace the current workspace in the local demo database, so use it only before entering data you want to keep.
-
-## Demo script
-
-1. Show the overview and backend status.
-2. Load the fictional sample workspace, or create an organization profile.
-3. In the review screen, submit the organization and choose **Simulate reviewer approval**. Explain that this only demonstrates a workflow; it does not verify a real company.
-4. Add equipment and a service record. The record is stored by the backend and fingerprinted with SHA-256.
-5. If you have the funded Devnet wallet, choose **Publish hash to Devnet**. Review the memo in the confirmation dialog, then review and sign it in Phantom. The backend fetches the transaction from Devnet and checks that its memo exactly matches the record ID and hash.
-6. Copy the public passport link and open it in another tab on the same computer. It reads the passport from the local backend.
-
-## Does blockchain need a backend?
-
-No. The browser creates the memo transaction, and the wallet signs it. TemirTrace's backend is included for a different reason: it persists shared demo records in `data/store.json`, serves public passport pages, and independently verifies a submitted transaction through Solana's `getTransaction` RPC method. The backend binds to `127.0.0.1` only.
-
-The current on-chain proof uses Solana's Memo program; there is no custom smart contract. The memo format is `TEMIRTRACE|v1|<event-id>|<sha256>`. Organization name, BIN, service provider, and comments are kept in the local database and are not included in the memo.
-
-## Demo limits
-
-- Devnet only. Devnet SOL has no real monetary value and the cluster can reset.
-- No user accounts, authentication, hosted database, TLS, backups, or access controls. The local backend is for a supervised demo on one computer, not public deployment.
-- Organization approval is simulated. BIN is checked for 12-digit format only; no Kazakhstan government registry or representative identity is checked.
-- A verified hash proves that the matching memo was recorded; it does not prove that maintenance occurred or that the submitted facts are true.
-- Public passport links reveal the shown equipment and service history to anyone who can access the local server. Use fictional demo data only.
-- The extension wallet must hold the private key for the exact funded Devnet address. A public key alone cannot sign. Never paste a recovery phrase or private key into the app or chat.
-
-## Build and start separately
-
-```powershell
-npm install
+```sh
+npm ci
 npm run build
 npm start
 ```
 
-Local data is written to `data/store.json`. To use another port, set `PORT` before `npm start` (for example `$env:PORT=8010`).
+Open `http://127.0.0.1:8001`. Without database settings the local server saves demo data to `data/store.json`. The local mode does not require an access code. Use fictional data only.
+
+## Deploy on Wasmer
+
+Connect this GitHub repository to a Wasmer app and select the `main` branch. Use the Node base preset with:
+
+- Install command: `npm ci`
+- Build command: `npm run build`
+- Start command: `npm start`
+- Enable Database: on (MySQL)
+
+In Environment variables set `NODE_ENV` to `production` and add `APP_ACCESS_CODE` with a newly generated random value of at least 32 characters. Generate one in CMD with:
+
+```cmd
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+Paste the generated value directly into Wasmer's environment-variable/secrets settings. Do not commit it to GitHub or put it in this README. The server refuses to start in production if either the managed database or access code is missing. Wasmer supplies `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, and `DB_PASSWORD` when its managed database is enabled. TemirTrace creates its state table automatically and starts with an empty workspace; it does not import the local `data/store.json` file.
+
+The app is protected by one shared pilot access code, kept in the browser tab session. It is suitable for a small, invited demo, not a multi-tenant production system. Public equipment-passport links are intentionally readable without the access code. Use only fictional or explicitly public details in those records. There are no individual accounts, organization isolation, or real moderator roles yet.
+
+## Demo walkthrough
+
+1. Open the Wasmer URL and enter the pilot access code.
+2. Use **Load sample demo** or create an organization profile.
+3. Submit the organization for review and use **Simulate reviewer approval**. This demonstrates a workflow; it is not a real company verification.
+4. Create an equipment passport and service record.
+5. If using a Phantom wallet funded with Devnet SOL, publish the record fingerprint. Review the memo in Phantom before signing.
+6. Copy and open the public passport link. It shows the intentionally public equipment history and Devnet proof status.
+
+## What the proof means
+
+The backend stores the full record in MySQL (Wasmer) or JSON (local mode). The browser computes its SHA-256 fingerprint. A wallet signs a Solana Devnet Memo containing `TEMIRTRACE|v1|<event-id>|<sha256>`. The backend fetches the transaction from Solana and checks that memo against the stored record.
+
+Only the record ID and hash are sent in the memo. A blockchain hash is not encryption and does not prove that a repair happened or that submitted details are true. BIN validation checks the 12-digit format only. There is no government-registry lookup, custom smart contract, or real reviewer identity check. Devnet SOL has no real monetary value and Devnet may reset.
+
+Never enter a wallet recovery phrase or private key into TemirTrace. The app should only request a transaction signature through the wallet extension.

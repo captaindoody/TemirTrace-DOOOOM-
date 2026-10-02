@@ -3,16 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": { "dev": "npm run build && npm start", "build": "esbuild src/main.jsx --bundle --minify --format=esm --platform=browser --target=es2022 --jsx=automatic --outdir=dist/assets --loader:.jsx=jsx --loader:.css=css && copy /Y index.html dist\\index.html >NUL", "start": "node server.js", "demo": "npm run dev" },
+  "scripts": {
+    "dev": "npm run build && npm start",
+    "build": "esbuild src/main.jsx --bundle --minify --format=esm --platform=browser --target=es2022 --jsx=automatic --outdir=dist/assets --loader:.jsx=jsx --loader:.css=css && node -e \"require('node:fs').copyFileSync('index.html','dist/index.html')\"",
+    "start": "node server.js",
+    "demo": "npm run dev"
+  },
   "dependencies": {
+    "@solana-program/memo": "^0.15.0",
     "@solana/kit": "^8.4.0",
     "@solana/kit-plugin-rpc": "^0.19.0",
     "@solana/kit-plugin-wallet": "^0.20.0",
-    "@solana-program/memo": "^0.15.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "vite": "^7.0.0",
+    "mysql2": "^3.24.5",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
-  },
-  "devDependencies": {}
+    "react-dom": "^19.2.8",
+    "vite": "^7.0.0"
+  }
 }
