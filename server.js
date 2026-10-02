@@ -1,4 +1,3 @@
-import { createServer } from 'node:http';
 import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -14,18 +13,22 @@ const RPC = 'https://api.devnet.solana.com';
 const MEMO_PROGRAM = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
 const PRODUCTION = process.env.NODE_ENV === 'production';
 const PORT = Number(process.env.PORT || (PRODUCTION ? 3000 : 8001));
-const HOST = process.env.HOST || (PRODUCTION ? '0.0.0.0' : '127.0.0.1');
 const ACCESS_CODE = process.env.APP_ACCESS_CODE || '';
-const DB_VARS = ['DB_HOST', 'DB_NAME', 'DB_USERNAME', 'DB_PASSWORD'];
-const hasDatabase = DB_VARS.every(name => process.env[name]) && process.env.DB_PORT;
+const publicMysqlUrl = process.env.MYSQL_PUBLIC_URL ? new URL(process.env.MYSQL_PUBLIC_URL) : null;
+const DB_HOST = process.env.DB_HOST || publicMysqlUrl?.hostname || process.env.MYSQLHOST;
+const DB_PORT = process.env.DB_PORT || publicMysqlUrl?.port || process.env.MYSQLPORT || '3306';
+const DB_NAME = process.env.DB_NAME || (publicMysqlUrl?.pathname ? decodeURIComponent(publicMysqlUrl.pathname.slice(1)) : '') || process.env.MYSQLDATABASE;
+const DB_USERNAME = process.env.DB_USERNAME || (publicMysqlUrl?.username ? decodeURIComponent(publicMysqlUrl.username) : '') || process.env.MYSQLUSER;
+const DB_PASSWORD = process.env.DB_PASSWORD || (publicMysqlUrl?.password ? decodeURIComponent(publicMysqlUrl.password) : '') || process.env.MYSQLPASSWORD;
+const hasDatabase = Boolean(DB_HOST && DB_PORT && DB_NAME && DB_USERNAME && DB_PASSWORD);
 if (PRODUCTION && ACCESS_CODE.length < 32) throw new Error('Set APP_ACCESS_CODE to a random value of at least 32 characters before production startup.');
-if (PRODUCTION && !hasDatabase) throw new Error('Production startup requires the Wasmer managed database (DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD).');
+if (PRODUCTION && !hasDatabase) throw new Error('Production startup requires MySQL settings (DB_* variables or Railway MYSQL_PUBLIC_URL / MYSQLHOST variables).');
 const pool = hasDatabase ? mysql.createPool({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USERNAME,
-  password: process.env.DB_PASSWORD,
+  host: DB_HOST,
+  port: Number(DB_PORT),
+  database: DB_NAME,
+  user: DB_USERNAME,
+  password: DB_PASSWORD,
   waitForConnections: true,
   connectionLimit: 5,
   queueLimit: 20,
@@ -83,6 +86,7 @@ function validAccessCode(candidate) {
   return provided.length === expected.length && timingSafeEqual(provided, expected);
 }
 async function bodyJson(req) {
+  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) return req.body;
   let body = '';
   for await (const chunk of req) {
     body += chunk;
@@ -156,7 +160,7 @@ async function serveStatic(req, res, pathname) {
   } catch { json(res, 404, { error: 'Not found. Run npm run build first.' }); }
 }
 
-const server = createServer(async (req, res) => {
+async function handleRequest(req, res) {
   const url = new URL(req.url || '/', `http://${req.headers.host || `localhost:${PORT}`}`);
   let dbConnection = null;
   let dbLock = false;
@@ -241,6 +245,6 @@ const server = createServer(async (req, res) => {
       dbConnection.release();
     }
   }
-});
+}
 
-server.listen(PORT, HOST, () => console.log(`TemirTrace ready on ${HOST}:${PORT} (Solana Devnet; storage: ${pool ? 'mysql' : 'local-json'})`));
+export default handleRequest;

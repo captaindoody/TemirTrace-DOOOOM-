@@ -33,6 +33,14 @@ Paste the generated value directly into Wasmer's environment-variable/secrets se
 
 The app is protected by one shared pilot access code, kept in the browser tab session. It is suitable for a small, invited demo, not a multi-tenant production system. Public equipment-passport links are intentionally readable without the access code. Use only fictional or explicitly public details in those records. There are no individual accounts, organization isolation, or real moderator roles yet.
 
+## Deploy on Vercel
+
+Vercel serves the Vite build from `dist` and runs the API through a Node.js Function in `api/[...path].js`. The `vercel.json` file contains the build, output, and public-passport route settings. Vercel does not run the local `npm start` command as a persistent server.
+
+The production API still needs a reachable MySQL database. One setup option is the Railway integration for Vercel: provision a Railway MySQL service, enable its public TCP proxy, and connect the Railway project to Vercel so `MYSQL_PUBLIC_URL` is available to the deployment. Railway documents that external MySQL access requires Public Access/TCP Proxy and that network egress may be billed. Alternatively, set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, and `DB_PASSWORD` in Vercel from another MySQL provider.
+
+In Vercel Environment Variables, set `NODE_ENV=production` and a fresh `APP_ACCESS_CODE` generated with the CMD command above. Keep all database credentials and the access code in Vercel/Railway secrets, never in GitHub. Redeploy after connecting the database and adding the variables. Do not use local JSON storage in a serverless production deployment.
+
 ## Demo walkthrough
 
 1. Open the Wasmer URL and enter the pilot access code.

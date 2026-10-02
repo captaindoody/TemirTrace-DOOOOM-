@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "npm run build && npm start",
     "build": "esbuild src/main.jsx --bundle --minify --format=esm --platform=browser --target=es2022 --jsx=automatic --outdir=dist/assets --loader:.jsx=jsx --loader:.css=css && node -e \"require('node:fs').copyFileSync('index.html','dist/index.html')\"",
-    "start": "node server.js",
+    "start": "node local-server.js",
     "demo": "npm run dev"
   },
   "dependencies": {
