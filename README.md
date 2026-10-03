@@ -1,132 +1,147 @@
-# TemirTrace
+# TemirTrace — Equipment Passports
 
-**Digital equipment passports with verifiable maintenance records.**
+[![Solana Devnet](https://img.shields.io/badge/Solana-Devnet-9945FF)](https://explorer.solana.com/?cluster=devnet)
+[![Colosseum](https://img.shields.io/badge/Colosseum-Crypto%20World's%20Fair%202026-141414)](https://colosseum.com/worldsfair)
 
-TemirTrace is an early-stage demo for organizations that need a clearer way to share equipment details and service history. Full records stay in the application database; a service-record ID and SHA-256 fingerprint can be published to Solana Devnet as a Memo transaction and checked later.
+> Equipment passports with maintenance records that can be checked against a public Solana Devnet transaction.
 
-**MVP · Solana Devnet · Kazakhstan**
+[Live Application](https://temir-trace-doooom.vercel.app/) · [GitHub Repository](https://github.com/captaindoody/TemirTrace-DOOOOM-) · [Colosseum Crypto World's Fair](https://colosseum.com/worldsfair)
 
-[Live demo](https://temir-trace-doooom.vercel.app/) · [GitHub repository](https://github.com/captaindoody/TemirTrace-DOOOOM-)
+---
 
-> **Demo notice:** This is a public prototype with one shared workspace and no user accounts or role-based access. Use fictional data only. Organization review is a manual demo workflow, and BIN validation checks the number format only; neither is an official verification.
+## Submission to Crypto World's Fair 2026
 
-## The problem
+| Name | Role | Location / Contact |
+| --- | --- | --- |
+| `@captaindoody` | Founder & Product Builder | Kazakhstan · [GitHub](https://github.com/captaindoody) |
 
-Equipment ownership details and maintenance records can be spread across documents and service providers. That makes it harder for a new owner or workshop to review an asset's history. TemirTrace explores whether a shared digital passport, paired with a verifiable record fingerprint, can make that history easier to inspect.
+## Problem and Solution
 
-This is a product hypothesis; the project has not yet established customer demand or completed a registry integration.
+Equipment details and service history can be held in separate documents and databases. When equipment changes hands or visits a new workshop, its history may be difficult to review. TemirTrace explores a portable digital passport for equipment and its maintenance records.
 
-## What the MVP does
+### 1. Scattered Service History
 
-- Create an organization profile and submit it to a demo review queue.
-- Add equipment and service records to a digital passport.
-- Calculate a SHA-256 fingerprint for a service record.
-- Connect a Solana Devnet wallet and publish the record ID and fingerprint in a Memo transaction after wallet approval.
-- Verify a submitted transaction signature against Solana Devnet and display the public passport.
+- **Problem hypothesis:** Owners and workshops may not have one convenient view of an asset's past maintenance.
+- **TemirTrace:** Keeps equipment details and service records together in a digital passport.
 
-## How the proof works
+### 2. Records Are Hard to Compare
 
-1. TemirTrace stores the complete organization, equipment, and service data off-chain in MySQL in the hosted deployment.
-2. The browser calculates a SHA-256 fingerprint from selected service-record fields.
-3. The connected wallet signs a Solana Devnet transaction containing a Memo in this format:
+- **Problem hypothesis:** A viewer may need a way to check that a shared record matches the version previously anchored.
+- **TemirTrace:** Calculates a SHA-256 fingerprint and can publish the record reference and fingerprint in a Solana Devnet Memo transaction.
 
-   ```text
-   TEMIRTRACE|v1|<record-id>|<sha256-fingerprint>
-   ```
+### 3. On-Chain Proof Has Limits
 
-4. The backend fetches the transaction from Solana Devnet and checks that the memo matches the saved record.
-5. A viewer can follow the transaction signature to Solana Explorer and compare the public fingerprint.
+- **Important limitation:** A matching fingerprint can show that data matches an anchored fingerprint. It does not prove the repair happened or verify that the submitted information is true.
+- Full organization, equipment, and service data remain off-chain in the application database.
 
-The memo is a public reference and fingerprint, not the full service record. A matching hash can show that the submitted content matches the anchored fingerprint; it does not prove that the repair happened or that the entered details are true. TemirTrace does not currently use a custom Solana smart contract.
+These problem statements are product hypotheses. Customer demand has not yet been validated.
 
 ## Why Solana
 
-Solana Devnet provides a public transaction record that a demo reviewer can inspect independently of the TemirTrace database. The prototype uses the Memo program to publish a compact reference and fingerprint. Devnet is for testing: its SOL has no monetary value, and its data may be reset.
+- **Public verification** — a reviewer can inspect the Devnet transaction independently of TemirTrace's database.
+- **Wallet approval** — the user reviews and signs the transaction from a connected wallet.
+- **Small on-chain reference** — the prototype publishes a record ID and fingerprint through the existing Memo program.
+- **No custom contract required for this demo** — TemirTrace uses Solana Devnet and the Memo program; it does not deploy its own Solana program.
 
-## Architecture
+## Summary of Features
 
-```mermaid
-flowchart LR
-    U[Organization or viewer] --> W[TemirTrace web app<br/>React + Vite]
-    W --> A[Node.js API]
-    A --> DB[(MySQL<br/>full demo records)]
-    W -->|wallet signs Memo transaction| S[Solana Devnet]
-    A -->|fetch and verify transaction| S
-    W -->|public passport link| V[Passport viewer]
-```
+- Organization profile with format-only BIN validation.
+- Manual organization review queue for the demo.
+- Equipment passports and maintenance records.
+- SHA-256 fingerprint calculation for selected service-record fields.
+- Phantom-compatible wallet connection through the Solana wallet interface.
+- Solana Devnet Memo submission and backend verification of the transaction signature and memo.
+- Public passport page with the record and available proof status.
 
-## Tech stack
+## Tech Stack
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | React, Vite, JavaScript |
-| Solana client | `@solana/kit`, wallet plugin, Memo program |
+| Frontend | React · Vite · JavaScript |
+| Solana client | `@solana/kit` · wallet plugin · `@solana-program/memo` |
 | Backend | Node.js API functions |
-| Hosted storage | MySQL |
-| Local storage | JSON file (`data/store.json`) |
+| Hosted database | MySQL · `mysql2` |
+| Local demo storage | JSON file |
 | Hosting | Vercel |
-| Blockchain network | Solana Devnet |
+| Network | Solana Devnet |
 
-## Run locally
+## Architecture
 
-Requirements: Node.js 20+ and npm.
+```text
+┌──────────────────────┐       ┌────────────────────────┐
+│ User / public viewer │──────▶│ TemirTrace web app     │
+└──────────────────────┘       │ React + Vite           │
+                               └───────────┬────────────┘
+                                           │ API requests
+                                           ▼
+                               ┌────────────────────────┐
+                               │ Node.js API            │──────▶ MySQL
+                               │ save / load / verify   │         Full records
+                               └───────────┬────────────┘
+                                           │ Read transaction
+┌──────────────────────┐                   ▼
+│ Wallet (e.g. Phantom)│──── signed ──▶ Solana Devnet
+└──────────────────────┘   Memo tx       Record ID + hash
+```
+
+See [docs/architecture.md](docs/architecture.md) for the record flow and what is stored on-chain versus off-chain.
+
+## Quick Start
+
+**Requirements:** Node.js 20+ and npm.
 
 ```sh
+# Clone the repository
+git clone https://github.com/captaindoody/TemirTrace-DOOOOM-.git
+cd TemirTrace-DOOOOM-
+
+# Install dependencies and build the frontend
 npm ci
 npm run build
+
+# Start the local demo
 npm start
 ```
 
-Open [http://127.0.0.1:8001](http://127.0.0.1:8001). Without database environment variables, the local server stores demo data in `data/store.json`. Install a Solana wallet such as Phantom in the same browser to try the Devnet transaction flow. Use only Devnet funds and fictional records.
+Open [http://127.0.0.1:8001](http://127.0.0.1:8001). With no database settings, local demo data is stored in `data/store.json`. To try the blockchain flow, open the site in a browser with Phantom and use Solana Devnet.
 
-## Hosted deployment
+## Roadmap
 
-The frontend is built into `dist` and served by Vercel. API endpoints are implemented by the files under `api/`. The hosted API requires a reachable MySQL database. Configure the database connection variables in Vercel and redeploy after changing them.
+- [x] Organization profile and demo review workflow
+- [x] Equipment passports and maintenance records
+- [x] Hash a record and submit a Devnet Memo transaction
+- [x] Verify the transaction against Solana Devnet
+- [ ] Add user accounts, organization-level data isolation, and reviewer permissions
+- [ ] Test the problem and workflow with equipment owners and service workshops
+- [ ] Evaluate an authoritative organization-verification source
+- [ ] Reassess production security and network requirements before any mainnet launch
 
-Supported database variables:
-
-- `MYSQL_PUBLIC_URL`, or
-- `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`
-
-Production startup requires MySQL settings. The server initializes its state table automatically; it does not import local JSON data into the hosted database.
-
-Because this demo has no sign-in, all visitors can read and modify the same shared workspace, including review decisions. Do not use real company, personal, or equipment data.
-
-## Demo walkthrough
-
-1. Open the [live demo](https://temir-trace-doooom.vercel.app/).
-2. Load the sample data or create a fictional organization profile.
-3. Submit the profile to review and use the clearly labelled demo reviewer flow.
-4. Add equipment and a service record.
-5. Connect Phantom on Solana Devnet and publish the fingerprint. Review the memo and approve it in the wallet.
-6. Open the public passport and inspect the Devnet verification status or transaction link.
-
-## Current limitations
-
-- No custom smart contract; the prototype uses the existing Solana Memo program.
-- Full records are stored off-chain; only a record reference and fingerprint are sent on-chain.
-- No government registry lookup: BIN is checked for format only.
-- Review decisions are a manual demo workflow, not independent organization verification.
-- No user accounts, organization separation, or moderator permissions.
-- No customer traction or demand-validation results are documented in this repository.
-- Devnet transactions are test transactions and do not represent production use.
-
-## Possible next steps
-
-These are ideas for future work, not features that are currently shipped:
-
-- Add sign-in, organization-level data separation, and reviewer permissions before using real records.
-- Talk with equipment owners and service workshops to test whether shared maintenance passports solve a real problem.
-- Explore an authoritative organization-verification source if pilot users need one.
-- Revisit a custom Solana program only if the product needs on-chain state or rules beyond a public record fingerprint.
-
-## Repository context
-
-The Git history in this repository begins on October 2, 2026. That history records the current repository, not necessarily every earlier prototype activity. AI coding tools assisted with implementation based on the founder's product goals and instructions. Any work completed before the hackathon period should be disclosed separately in the Colosseum submission.
+Full proposed roadmap: [docs/roadmap.md](docs/roadmap.md).
 
 ## Resources
 
-- [Live demo](https://temir-trace-doooom.vercel.app/)
+- [Live application](https://temir-trace-doooom.vercel.app/)
 - [GitHub repository](https://github.com/captaindoody/TemirTrace-DOOOOM-)
 - [Solana Devnet Explorer](https://explorer.solana.com/?cluster=devnet)
 - [Colosseum Crypto World's Fair](https://colosseum.com/worldsfair)
+
+Add the published pitch video, demo video, and Colosseum project-submission link here once their final URLs are available.
+
+## Demo and Limitations
+
+The hosted prototype uses a single shared workspace with no user accounts or role-based access. Anyone who can open it may read or change demo data. Use fictional organization, personal, and equipment data only.
+
+- BIN validation checks the number format only; there is no registry lookup.
+- Organization review is a manual demo workflow, not an independent or legal verification.
+- Full records are stored off-chain. The memo is public and is not encryption.
+- A hash does not prove that a service event happened or that the submitted data is true.
+- The project has no custom Solana smart contract and no documented customer traction yet.
+- Devnet SOL has no real monetary value; Devnet data may be reset.
+
+## Repository Context
+
+The Git history in this repository begins on October 2, 2026; it does not necessarily capture earlier prototype activity. AI coding tools assisted with implementation based on the founder's product goals and instructions. Any work completed before the hackathon period should be disclosed separately in the Colosseum submission.
+
+---
+
+**License:** No license file has been added yet. Do not assume this repository is available for reuse under an open-source license.
