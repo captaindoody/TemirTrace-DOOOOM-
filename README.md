@@ -2,6 +2,7 @@
 
 [![Solana Devnet](https://img.shields.io/badge/Solana-Devnet-9945FF)](https://explorer.solana.com/?cluster=devnet)
 [![Colosseum](https://img.shields.io/badge/Colosseum-Crypto%20World's%20Fair%202026-141414)](https://colosseum.com/worldsfair)
+[![License: MIT](https://img.shields.io/badge/License-MIT-14F195)](LICENSE)
 
 > Equipment passports with maintenance records that can be checked against a public Solana Devnet transaction.
 
@@ -124,6 +125,8 @@ Full proposed roadmap: [docs/roadmap.md](docs/roadmap.md).
 - [GitHub repository](https://github.com/captaindoody/TemirTrace-DOOOOM-)
 - [Solana Devnet Explorer](https://explorer.solana.com/?cluster=devnet)
 - [Colosseum Crypto World's Fair](https://colosseum.com/worldsfair)
+- [Contributing](CONTRIBUTING.md)
+- [MIT License](LICENSE)
 
 Add the published pitch video, demo video, and Colosseum project-submission link here once their final URLs are available.
 
@@ -144,4 +147,10 @@ The Git history in this repository begins on October 2, 2026; it does not necess
 
 ---
 
-**License:** No license file has been added yet. Do not assume this repository is available for reuse under an open-source license.
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request.
+
+## License
+
+TemirTrace is released under the [MIT License](LICENSE).
