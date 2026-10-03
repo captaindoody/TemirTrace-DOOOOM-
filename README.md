@@ -23,15 +23,9 @@ Connect this GitHub repository to a Wasmer app and select the `main` branch. Use
 - Start command: `npm start`
 - Enable Database: on (MySQL)
 
-In Environment variables set `NODE_ENV` to `production` and add `APP_ACCESS_CODE` with a newly generated random value of at least 32 characters. Generate one in CMD with:
+Set `NODE_ENV` to `production`. The server requires the managed database but no access code. Wasmer supplies `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, and `DB_PASSWORD` when its managed database is enabled. TemirTrace creates its state table automatically and starts with an empty workspace; it does not import the local `data/store.json` file.
 
-```cmd
-node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
-```
-
-Paste the generated value directly into Wasmer's environment-variable/secrets settings. Do not commit it to GitHub or put it in this README. The server refuses to start in production if either the managed database or access code is missing. Wasmer supplies `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, and `DB_PASSWORD` when its managed database is enabled. TemirTrace creates its state table automatically and starts with an empty workspace; it does not import the local `data/store.json` file.
-
-The app is protected by one shared pilot access code, kept in the browser tab session. It is suitable for a small, invited demo, not a multi-tenant production system. Public equipment-passport links are intentionally readable without the access code. Use only fictional or explicitly public details in those records. There are no individual accounts, organization isolation, or real moderator roles yet.
+The demo has no login or access code. All visitors can read and change the single shared workspace, including organization profiles, equipment passports, service records, and demo review decisions. Use only fictional data. There are no individual accounts, organization isolation, or protected moderator roles; this setup is for a public demonstration, not production use.
 
 ## Deploy on Vercel
 
@@ -39,11 +33,11 @@ Vercel serves the Vite build from `dist` and runs the API through a Node.js Func
 
 The production API still needs a reachable MySQL database. One setup option is the Railway integration for Vercel: provision a Railway MySQL service, enable its public TCP proxy, and connect the Railway project to Vercel so `MYSQL_PUBLIC_URL` is available to the deployment. Railway documents that external MySQL access requires Public Access/TCP Proxy and that network egress may be billed. Alternatively, set `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, and `DB_PASSWORD` in Vercel from another MySQL provider.
 
-In Vercel Environment Variables, set `NODE_ENV=production` and a fresh `APP_ACCESS_CODE` generated with the CMD command above. Keep all database credentials and the access code in Vercel/Railway secrets, never in GitHub. Redeploy after connecting the database and adding the variables. Do not use local JSON storage in a serverless production deployment.
+In Vercel Environment Variables, set `NODE_ENV=production` and the MySQL connection variables. `APP_ACCESS_CODE` is no longer used and can be removed from Vercel. Redeploy after changing environment variables. Do not use local JSON storage in a serverless production deployment.
 
 ## Demo walkthrough
 
-1. Open the Wasmer URL and enter the pilot access code.
+1. Open the public demo URL.
 2. Use **Load sample demo** or create an organization profile.
 3. Submit the organization for review and use **Simulate reviewer approval**. This demonstrates a workflow; it is not a real company verification.
 4. Create an equipment passport and service record.

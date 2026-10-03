@@ -7,7 +7,6 @@ import { getAddMemoInstruction } from '@solana-program/memo';
 const API = '/api';
 const STORAGE = 'temirtrace-solana-v1';
 const RPC = 'https://api.devnet.solana.com';
-let accessCode = window.sessionStorage.getItem('temirtrace-access-code') || '';
 const client = createClient().use(walletSigner({ chain: 'solana:devnet' })).use(solanaRpc({ rpcUrl: RPC }));
 const empty = { org: null, assets: [], events: [] };
 const verified = org => ['verified', 'demo_verified'].includes(org?.verification?.status);
@@ -20,7 +19,6 @@ async function hashRecord(record) {
 }
 async function request(path, options = {}) {
   const headers = { 'content-type': 'application/json', ...options.headers };
-  if (accessCode) headers.authorization = `Bearer ${accessCode}`;
   const res = await fetch(`${API}${path}`, { ...options, headers });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) { const error = new Error(body.error || `Server error (${res.status})`); error.status = res.status; throw error; }
@@ -39,10 +37,6 @@ export default function App() {
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const [needsAccess, setNeedsAccess] = useState(false);
-  const [accessBusy, setAccessBusy] = useState(false);
-  const [accessError, setAccessError] = useState('');
-  const [accessProtected, setAccessProtected] = useState(false);
   const connected = walletState.connected;
   const wallets = walletState.wallets;
   const asset = data.assets.find(x => x.id === activeAsset);
@@ -56,11 +50,10 @@ export default function App() {
       setBackend('online'); setLoaded(true);
       return () => { live = false; unsub(); };
     }
-    request('/health').then(health => { if (live) { setAccessProtected(Boolean(health.accessProtected)); setBackend('online'); } }).catch(() => {});
+    request('/health').then(() => { if (live) setBackend('online'); }).catch(() => {});
     request('/state').then(serverData => {
       if (live) { setData({ ...empty, ...serverData }); setBackend('online'); }
     }).catch(e => {
-      if (e.status === 401) { if (live) { setNeedsAccess(true); setBackend('checking'); } return; }
       try { if (live) setData({ ...empty, ...JSON.parse(localStorage.getItem(STORAGE) || '{}') }); } catch { /* start clean */ }
       if (live) { setBackend('offline'); setError('Backend is unavailable. Start the TemirTrace server to save shared demo data.'); }
     }).finally(() => { if (live) setLoaded(true); });
@@ -168,20 +161,6 @@ export default function App() {
     setActiveAsset(assetId); setPage('asset'); setNotice('Fictional demo workspace loaded. Nothing has been written to the blockchain.');
   };
   const sharePassport = assetId => `${window.location.origin}/p/${assetId}`;
-  const unlockWorkspace = async code => {
-    setAccessBusy(true); setAccessError('');
-    try {
-      await request('/access', { method: 'POST', body: JSON.stringify({ accessCode: code }) });
-      accessCode = code; window.sessionStorage.setItem('temirtrace-access-code', code);
-      const serverData = await request('/state');
-      setData({ ...empty, ...serverData }); setBackend('online'); setNeedsAccess(false); setLoaded(true);
-      return true;
-    } catch (e) { accessCode = ''; window.sessionStorage.removeItem('temirtrace-access-code'); setAccessError(e.message); return false; }
-    finally { setAccessBusy(false); }
-  };
-
-  if (needsAccess) return <AccessGate onUnlock={unlockWorkspace} busy={accessBusy} error={accessError} />;
-
   return <div className="shell">
     {page !== 'public' && <aside className="side"><div className="brand"><span className="mark">T</span><span><b>TEMIRTRACE</b><small>VERIFIABLE EQUIPMENT HISTORY</small></span></div><div className="nav-title">WORKSPACE</div>
       <button className={`nav ${page === 'home' ? 'selected' : ''}`} onClick={() => { setPage('home'); setActiveAsset(null); }}>▦ <span>Overview</span></button>
@@ -191,7 +170,7 @@ export default function App() {
       <div className="side-foot"><b>TEST NETWORK</b><span>Solana Devnet · test SOL</span><small>{backend === 'online' ? 'Persistent storage connected' : backend === 'checking' ? 'Connecting to backend…' : 'Backend offline'}</small></div>
     </aside>}
     <main className="main"><header className="top"><span className="crumb">TemirTrace / {page === 'org' ? 'Organization' : page === 'verification' ? 'Organization review' : page === 'asset-form' ? 'New equipment' : page === 'event-form' ? 'New service record' : page === 'public' ? 'Public passport' : asset?.make || 'Overview'}</span>
-      <div className="top-right"><span className={`backend-pill ${backend}`}>● {backend === 'online' ? 'BACKEND ONLINE' : backend === 'checking' ? 'CONNECTING' : 'BACKEND OFFLINE'}</span>{accessProtected && <button className="btn" onClick={() => { accessCode = ''; window.sessionStorage.removeItem('temirtrace-access-code'); setNeedsAccess(true); setLoaded(false); }}>Lock app</button>}<div className="wallet">{connected ? <><span className="network"><i />DEVNET</span><button className="wallet-btn" onClick={() => client.wallet.disconnect()} title="Disconnect wallet">◉ {short(connectedAddress)} <small>×</small></button></> : <div className="wallet-menu"><button className="btn dark" disabled={!wallets.length || busy === 'wallet'} onClick={() => wallets.length === 1 ? connectWallet(wallets[0]) : setPage(page === 'wallets' ? 'home' : 'wallets')}>{busy === 'wallet' ? 'Connecting…' : 'Connect wallet'}</button>{page === 'wallets' && <div className="wallet-pop">{wallets.length ? wallets.map(w => <button key={w.name} onClick={() => connectWallet(w)}>{w.name}</button>) : <span>No Wallet Standard wallet detected. Install Phantom from its official site, then reopen this page in the same browser.</span>}</div>}</div>}</div></div>
+      <div className="top-right"><span className={`backend-pill ${backend}`}>● {backend === 'online' ? 'BACKEND ONLINE' : backend === 'checking' ? 'CONNECTING' : 'BACKEND OFFLINE'}</span><div className="wallet">{connected ? <><span className="network"><i />DEVNET</span><button className="wallet-btn" onClick={() => client.wallet.disconnect()} title="Disconnect wallet">◉ {short(connectedAddress)} <small>×</small></button></> : <div className="wallet-menu"><button className="btn dark" disabled={!wallets.length || busy === 'wallet'} onClick={() => wallets.length === 1 ? connectWallet(wallets[0]) : setPage(page === 'wallets' ? 'home' : 'wallets')}>{busy === 'wallet' ? 'Connecting…' : 'Connect wallet'}</button>{page === 'wallets' && <div className="wallet-pop">{wallets.length ? wallets.map(w => <button key={w.name} onClick={() => connectWallet(w)}>{w.name}</button>) : <span>No Wallet Standard wallet detected. Install Phantom from its official site, then reopen this page in the same browser.</span>}</div>}</div>}</div></div>
     </header>
     <div className="content">
       {notice && <div className="toast">✓ {notice}<button onClick={() => setNotice('')}>×</button></div>}{error && <div className="error">{error}<button onClick={() => setError('')}>×</button></div>}
@@ -226,26 +205,4 @@ function PublicPassport({ data, onBack }) {
   if (!data) return <section className="form-card"><button className="back" onClick={onBack}>← Back to app</button><h1>Loading passport…</h1></section>;
   if (data.error) return <section className="form-card"><button className="back" onClick={onBack}>← Back to app</button><h1>Passport not found</h1><p>This public link may be invalid or the server is unavailable.</p></section>;
   return <section className="public-passport"><div className="public-head"><span className="mark">T</span><div><b>TEMIRTRACE</b><small>PUBLIC EQUIPMENT PASSPORT</small></div><button className="btn" onClick={onBack}>Open app</button></div><div className="chain-banner"><span>◈</span><div><b>Equipment history</b><small>Public view · records and Devnet proof status are shown separately.</small></div><span className="dev-pill">DEVNET</span></div><section className="panel"><label>ASSET PASSPORT</label><h1>{data.asset.make} {data.asset.model}</h1><p>{data.asset.kind} · {data.asset.year} · Asset ID {data.asset.code}</p><div className="public-org"><b>Issued by</b><span>{data.organization.name}</span><small>{data.organization.city} · {data.organization.verificationLabel}</small></div></section><section className="panel public-history"><div className="panel-head"><div><h2>Service history</h2><p>{data.events.length} record(s)</p></div></div>{data.events.length ? data.events.map(ev => <div className="service-card" key={ev.id}><div className="service-top"><div><b>{ev.title}</b><small>{prettyDate(ev.date)} · {ev.provider}</small></div><span className={`state ${ev.chainStatus === 'confirmed' ? 'confirmed' : ''}`}>{ev.chainStatus === 'confirmed' ? 'On-chain proof verified' : ev.signature ? 'Proof submitted, pending check' : 'No chain proof'}</span></div>{ev.notes && <p className="notes">{ev.notes}</p>}<div className="hash-box"><small>Record SHA-256</small><code>{ev.hash}</code></div>{ev.signature && <a className="explorer-link" href={`https://explorer.solana.com/tx/${ev.signature}?cluster=devnet`} target="_blank" rel="noreferrer">View Devnet transaction ↗</a>}</div>) : <div className="empty">No service records have been added.</div>}</section><p className="public-disclaimer">A blockchain hash proves that a matching hash was submitted, not that the company or service record is truthful. Organization review in this demo is simulated.</p></section>;
-}
-
-function AccessGate({ onUnlock, busy, error }) {
-  const [code, setCode] = useState('');
-  const [message, setMessage] = useState('');
-  const submit = async e => {
-    e.preventDefault(); setMessage('');
-    const ok = await onUnlock(code);
-    if (!ok) setMessage(error || 'Access could not be verified. Check the code and try again.');
-  };
-  return <main className="shell" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
-    <section className="form-card" style={{ width: 'min(100%, 460px)' }}>
-      <div className="brand"><span className="mark">T</span><span><b>TEMIRTRACE</b><small>PRIVATE PILOT WORKSPACE</small></span></div>
-      <h1 style={{ marginTop: 32 }}>Enter demo access code</h1>
-      <p>This pilot is limited to people who have been given the access code.</p>
-      <form onSubmit={submit}>
-        <label className="field"><span>Access code</span><input type="password" autoComplete="current-password" value={code} onChange={e => setCode(e.target.value)} required autoFocus /></label>
-        {(message || error) && <p role="alert" style={{ color: '#a93636' }}>{message || error}</p>}
-        <div className="form-actions"><span>Solana Devnet · test data only</span><button className="btn primary" disabled={busy}>{busy ? 'Checking…' : 'Open workspace'}</button></div>
-      </form>
-    </section>
-  </main>;
 }

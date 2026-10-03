@@ -2,7 +2,6 @@ import { readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { timingSafeEqual } from 'node:crypto';
 import mysql from 'mysql2/promise';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -13,7 +12,6 @@ const RPC = 'https://api.devnet.solana.com';
 const MEMO_PROGRAM = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
 const PRODUCTION = process.env.NODE_ENV === 'production';
 const PORT = Number(process.env.PORT || (PRODUCTION ? 3000 : 8001));
-const ACCESS_CODE = process.env.APP_ACCESS_CODE || '';
 const publicMysqlUrl = process.env.MYSQL_PUBLIC_URL ? new URL(process.env.MYSQL_PUBLIC_URL) : null;
 const DB_HOST = process.env.DB_HOST || publicMysqlUrl?.hostname || process.env.MYSQLHOST;
 const DB_PORT = process.env.DB_PORT || publicMysqlUrl?.port || process.env.MYSQLPORT || '3306';
@@ -21,7 +19,6 @@ const DB_NAME = process.env.DB_NAME || (publicMysqlUrl?.pathname ? decodeURIComp
 const DB_USERNAME = process.env.DB_USERNAME || (publicMysqlUrl?.username ? decodeURIComponent(publicMysqlUrl.username) : '') || process.env.MYSQLUSER;
 const DB_PASSWORD = process.env.DB_PASSWORD || (publicMysqlUrl?.password ? decodeURIComponent(publicMysqlUrl.password) : '') || process.env.MYSQLPASSWORD;
 const hasDatabase = Boolean(DB_HOST && DB_PORT && DB_NAME && DB_USERNAME && DB_PASSWORD);
-if (PRODUCTION && ACCESS_CODE.length < 32) throw new Error('Set APP_ACCESS_CODE to a random value of at least 32 characters before production startup.');
 if (PRODUCTION && !hasDatabase) throw new Error('Production startup requires MySQL settings (DB_* variables or Railway MYSQL_PUBLIC_URL / MYSQLHOST variables).');
 const pool = hasDatabase ? mysql.createPool({
   host: DB_HOST,
@@ -78,12 +75,6 @@ async function refreshState(connection) {
   if (!pool) return;
   const [rows] = await connection.execute('SELECT payload FROM temirtrace_state WHERE state_id = 1');
   state = rows.length ? { ...state, ...JSON.parse(rows[0].payload) } : { org: null, assets: [], events: [] };
-}
-function validAccessCode(candidate) {
-  if (!ACCESS_CODE) return !PRODUCTION;
-  const provided = Buffer.from(String(candidate || ''));
-  const expected = Buffer.from(ACCESS_CODE);
-  return provided.length === expected.length && timingSafeEqual(provided, expected);
 }
 async function bodyJson(req) {
   if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) return req.body;
@@ -165,16 +156,6 @@ async function handleRequest(req, res) {
   let dbConnection = null;
   let dbLock = false;
   try {
-    if (url.pathname === '/api/access' && req.method === 'POST') {
-      const input = await bodyJson(req);
-      return validAccessCode(input.accessCode)
-        ? json(res, 200, { authorized: true })
-        : json(res, 401, { error: 'That access code is not correct.' });
-    }
-    const privateRoute = ['/api/state', '/api/review-queue', '/api/review-queue/decision'].includes(url.pathname) || /^\/api\/verify\/[A-Za-z0-9-]+$/.test(url.pathname);
-    if (privateRoute && !validAccessCode(req.headers.authorization?.replace(/^Bearer\s+/i, ''))) {
-      return json(res, 401, { error: 'Enter the private demo access code to continue.' });
-    }
     if (pool && url.pathname.startsWith('/api/')) {
       dbConnection = await pool.getConnection();
       if (['PUT', 'POST', 'PATCH', 'DELETE'].includes(req.method)) {
@@ -184,7 +165,7 @@ async function handleRequest(req, res) {
       }
       await refreshState(dbConnection);
     }
-    if (url.pathname === '/api/health' && req.method === 'GET') return json(res, 200, { status: 'ok', app: 'TemirTrace', backend: pool ? 'mysql' : 'local-json', accessProtected: Boolean(ACCESS_CODE), cluster: 'devnet', timestamp: new Date().toISOString() });
+    if (url.pathname === '/api/health' && req.method === 'GET') return json(res, 200, { status: 'ok', app: 'TemirTrace', backend: pool ? 'mysql' : 'local-json', accessProtected: false, cluster: 'devnet', timestamp: new Date().toISOString() });
     if (url.pathname === '/api/state' && req.method === 'GET') return json(res, 200, state);
     if (url.pathname === '/api/review-queue' && req.method === 'GET') {
       const org = state.org?.verification?.status === 'pending' ? state.org : null;
